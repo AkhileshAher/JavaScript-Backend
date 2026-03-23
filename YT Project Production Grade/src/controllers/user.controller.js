@@ -92,7 +92,6 @@ const registerUser = asyncHandler(async (req, res) => {
             "-password -refreshToken"
       );
 
-      console.log(createdUser);
 
       if (!createdUser) {
             throw new ApiError(

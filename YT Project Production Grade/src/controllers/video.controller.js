@@ -1,40 +1,37 @@
 import mongoose from "mongoose";
-import { verifyJWT } from "../middlewares/auth.middleware.js";
 import { Video } from "../models/videos.model.js";
 import { ApiError } from "../utils/ApiError.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { uploadOnCloudinary } from "../utils/cloudinary.js";
-import { User } from "../models/user.model.js";
+import { validObjectIdCheck } from "../utils/ObjectIdValidator.js";
 
 const getAllVideos = asyncHandler(async (req, res) => {
       const {
             page = 1,
             limit = 10,
-            query,
+            query = "",
             sortBy = "createdAt",
             sortType = "desc",
             userId,
       } = req.query;
 
-      // check for query empty other
-      // Check for Specific user query
-      // sort filters
 
-      if (!query || query.trim() === "") {
-            throw new ApiError(400, "Search query is required");
-      }
-
-      // Match Stage
-      const matchStage = {
-            isPublished: true,
-            $text: { $search: query },
-      };
-
-      // Optional Filter by User
       if (userId) {
-            matchStage.owner = new mongoose.Types.ObjectId(userId);
+            validObjectIdCheck(userId, 400, "Invalid User ID");
+            matchStage.owner = userId;
       }
+
+      let matchStage = {};
+      if (query.trim() || userId) {
+            matchStage = {
+                  isPublished: true,
+                  $text: { $search: query },
+            };
+      }
+
+
+      matchStage.owner = new mongoose.Types.ObjectId(userId);
 
       const aggregate = Video.aggregate([
             {
@@ -56,7 +53,10 @@ const getAllVideos = asyncHandler(async (req, res) => {
                   },
             },
             {
-                  $unwind: "$ownerDetails",
+                  $unwind: {
+                        path: "$ownerDetails",
+                        preserveNullAndEmptyArrays: true,
+                  },
             },
             {
                   $project: {
@@ -97,28 +97,31 @@ const getAllVideos = asyncHandler(async (req, res) => {
 const publishAVideo = asyncHandler(async (req, res) => {
       const { title, description } = req.body;
 
+      if ((title && !title.trim()) || (description && !description.trim())) {
+            throw new ApiError(400, "Fields cannot be empty");
+      }
+
       const videoFilePath = req.files?.video?.[0].path;
       const thumbnailPath = req.files?.thumbnail?.[0].path;
 
       if (!videoFilePath) {
-            throw new ApiError(404, "Video File is Required");
+            throw new ApiError(400, "Video File is Required");
       }
 
       if (!thumbnailPath) {
-            throw new ApiError(404, "Thumbnail is Required");
+            throw new ApiError(400, "Thumbnail is Required");
       }
 
       const video = await uploadOnCloudinary(videoFilePath);
       const thumbnail = await uploadOnCloudinary(thumbnailPath);
 
       if (!video) {
-            throw new ApiError(404, "Video File is Missing");
+            throw new ApiError(400, "Video File is Missing");
       }
       if (!thumbnail) {
-            throw new ApiError(404, "Thumbnail is Missing");
+            throw new ApiError(400, "Thumbnail is Missing");
       }
 
-      //console.log(video);
 
       const videoData = await Video.create({
             videoFile: video.url,
@@ -132,10 +135,10 @@ const publishAVideo = asyncHandler(async (req, res) => {
       });
 
       return res
-            .status(200)
+            .status(201)
             .json(
                   new ApiResponse(
-                        200,
+                        201,
                         videoData,
                         "Video Published SuccessFully"
                   )
@@ -145,14 +148,12 @@ const publishAVideo = asyncHandler(async (req, res) => {
 const getVideoById = asyncHandler(async (req, res) => {
       const { videoId } = req.params;
 
-      if (!videoId) {
-            throw new ApiError(404, "videoId is Required");
-      }
+      validObjectIdCheck(videoId, 400, "Invalid Video ID");
 
       const video = await Video.findById(videoId);
 
       if (!video) {
-            throw new ApiError(404, "No Video Found");
+            throw new ApiError(400, "No Video Found");
       }
 
       return res
@@ -164,44 +165,42 @@ const updateVideo = asyncHandler(async (req, res) => {
       const { videoId } = req.params;
       const { title, description } = req.body;
 
+      validObjectIdCheck(videoId, 400, "Invalid Video ID");
+
       if (!(title || description)) {
-            throw new ApiError(404, "All Fields are Required");
-      }
-
-      const video = await Video.findById(videoId);
-
-      if (!video) {
-            throw new ApiError(404, "Video not found");
-      }
-
-      const user = await User.findById(video.owner).select(
-            "-password -refreshToken"
-      );
-
-      if (user._id.toString() != req.user._id.toString()) {
-            throw new ApiError(401, "Unauthorized Access");
+            throw new ApiError(400, "All Fields are Required");
       }
 
       const thumbnailFilePath = req.file?.path;
 
-      let thumbnailFile;
+      let thumbnailFile = "";
       if (thumbnailFilePath) {
             thumbnailFile = await uploadOnCloudinary(thumbnailFilePath);
       }
 
-      const videoData = await Video.findByIdAndUpdate(
-            videoId,
+      const updateData = {
+            title,
+            description,
+      };
+
+      if (thumbnailFile?.url) {
+            updateData.thumbnail = thumbnailFile.url;
+      }
+
+      const videoData = await Video.findOneAndUpdate(
             {
-                  $set: {
-                        thumbnail: thumbnailFile?.url || video.thumbnail,
-                        title,
-                        description,
-                  },
+                  _id: videoId,
+                  owner: req.user._id,
             },
+            updateData,
             {
                   returnDocument: "after",
             }
       );
+
+      if (!videoData) {
+            throw new ApiError(400, "No Video Found or Unaithorized Access");
+      }
 
       return res
             .status(200)
@@ -213,23 +212,16 @@ const updateVideo = asyncHandler(async (req, res) => {
 const deleteVideo = asyncHandler(async (req, res) => {
       const { videoId } = req.params;
 
-      if (!videoId) {
-            throw new ApiError(404, "VideoId is Required");
-      }
+      validObjectIdCheck(videoId, 400, "Invalid Video ID");
 
-      const video = await Video.findById(videoId);
-
-      if (!video) {
-            throw new ApiError(408, "No Video Exist with this videoId");
-      }
-
-      if (video.owner.toString() !== req.user._id.toString()) {
-            throw new ApiError(404, "You dont have Access to delete the Video");
-      }
-
-      const videoDelete = await Video.findByIdAndDelete(videoId, {
-            returnDocument: "after",
+      const videoDelete = await Video.findOneAndDelete({
+            _id: videoId,
+            owner: req.user._id,
       });
+
+      if (!videoDelete) {
+            throw new ApiError(404, "Video not found or unauthorized");
+      }
 
       return res
             .status(200)
@@ -245,6 +237,8 @@ const deleteVideo = asyncHandler(async (req, res) => {
 const togglePublishStatus = asyncHandler(async (req, res) => {
       const { videoId } = req.params;
 
+      validObjectIdCheck(videoId, 400, "Invalid Video ID");
+
       const video = await Video.findById(videoId);
 
       if (!video) {
@@ -253,7 +247,7 @@ const togglePublishStatus = asyncHandler(async (req, res) => {
 
       if (video.owner.toString() !== req.user._id.toString()) {
             throw new ApiError(
-                  405,
+                  403,
                   "You dont have Access to edit this Video Settings"
             );
       }

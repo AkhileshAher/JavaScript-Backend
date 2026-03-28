@@ -4,6 +4,7 @@ import { ApiResponse } from "../utils/ApiResponse.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { Video } from "../models/videos.model.js";
 import mongoose from "mongoose";
+import { validObjectIdCheck } from "../utils/ObjectIdValidator.js";
 
 const createPlaylist = asyncHandler(async (req, res) => {
       const { name, description } = req.body;
@@ -38,19 +39,9 @@ const createPlaylist = asyncHandler(async (req, res) => {
 const getUserPlaylists = asyncHandler(async (req, res) => {
       const { userId } = req.params;
 
-      if (!userId || userId.trim() === "") {
-            throw new ApiError(400, "UserId is required");
-      }
-
-      if (!mongoose.Types.ObjectId.isValid(userId)) {
-            throw new ApiError(400, "Invalid user ID");
-      }
+      validObjectIdCheck(userId, 400, "Invalid User ID");
 
       const playlists = await Playlist.find({ owner: userId });
-
-      if (!playlists.length) {
-            throw new ApiError(404, "No playlists found");
-      }
 
       return res
             .status(200)
@@ -66,13 +57,7 @@ const getUserPlaylists = asyncHandler(async (req, res) => {
 const getPlaylistById = asyncHandler(async (req, res) => {
       const { playlistId } = req.params;
 
-      if (!playlistId || playlistId.trim() === "") {
-            throw new ApiError(400, "PlaylistId is required");
-      }
-
-      if (!mongoose.Types.ObjectId.isValid(playlistId)) {
-            throw new ApiError(400, "Invalid playlist ID");
-      }
+      validObjectIdCheck(playlistId, 400, "Invalid Playlist ID");
 
       const objectPlaylistId = new mongoose.Types.ObjectId(playlistId);
 
@@ -108,23 +93,11 @@ const getPlaylistById = asyncHandler(async (req, res) => {
 const addVideoToPlaylist = asyncHandler(async (req, res) => {
       const { playlistId, videoId } = req.params;
 
-      if (
-            !playlistId ||
-            !videoId ||
-            playlistId.trim() === "" ||
-            videoId.trim() === ""
-      ) {
-            throw new ApiError(400, "PlaylistId and VideoId are required");
-      }
-
-      if (
-            !mongoose.Types.ObjectId.isValid(playlistId) ||
-            !mongoose.Types.ObjectId.isValid(videoId)
-      ) {
-            throw new ApiError(400, "Invalid playlist or video ID");
-      }
+      validObjectIdCheck(playlistId, 400, "Invalid Playlist ID");
+      validObjectIdCheck(videoId, 400, "Invalid Video ID");
 
       const video = await Video.findById(videoId);
+
       if (!video) {
             throw new ApiError(404, "Video not found");
       }
@@ -149,20 +122,12 @@ const addVideoToPlaylist = asyncHandler(async (req, res) => {
 const removeVideoFromPlaylist = asyncHandler(async (req, res) => {
       const { playlistId, videoId } = req.params;
 
-      if (
-            !playlistId ||
-            !videoId ||
-            playlistId.trim() === "" ||
-            videoId.trim() === ""
-      ) {
-            throw new ApiError(400, "PlaylistId and VideoId are required");
-      }
+      validObjectIdCheck(playlistId, 400, "Invalid Playlist ID");
+      validObjectIdCheck(videoId, 400, "Invalid Video ID");
 
-      if (
-            !mongoose.Types.ObjectId.isValid(playlistId) ||
-            !mongoose.Types.ObjectId.isValid(videoId)
-      ) {
-            throw new ApiError(400, "Invalid playlist or video ID");
+      const videoExists = await Video.exists({ _id: videoId });
+      if (!videoExists) {
+            throw new ApiError(404, "Video not found");
       }
 
       const playlist = await Playlist.findOneAndUpdate(
@@ -187,13 +152,7 @@ const removeVideoFromPlaylist = asyncHandler(async (req, res) => {
 const deletePlaylist = asyncHandler(async (req, res) => {
       const { playlistId } = req.params;
 
-      if (!playlistId || playlistId.trim() === "") {
-            throw new ApiError(400, "PlaylistId is required");
-      }
-
-      if (!mongoose.Types.ObjectId.isValid(playlistId)) {
-            throw new ApiError(400, "Invalid playlist ID");
-      }
+      validObjectIdCheck(playlistId, 400, "Invalid Playlist ID");
 
       const playlist = await Playlist.findOneAndDelete({
             _id: playlistId,
@@ -206,27 +165,30 @@ const deletePlaylist = asyncHandler(async (req, res) => {
 
       return res
             .status(200)
-            .json(new ApiResponse(200, {}, "Playlist deleted successfully"));
+            .json(
+                  new ApiResponse(
+                        200,
+                        playlist,
+                        "Playlist deleted successfully"
+                  )
+            );
 });
 
 const updatePlaylist = asyncHandler(async (req, res) => {
       const { playlistId } = req.params;
       const { name, description } = req.body;
 
-      if (
-            [playlistId, name, description].some(
-                  (field) => !field || field.trim() === ""
-            )
-      ) {
+      validObjectIdCheck(playlistId, 400, "Invalid Playlist ID");
+
+      if ([name, description].some((field) => !field || field.trim() === "")) {
             throw new ApiError(400, "All fields are required");
       }
 
-      if (!mongoose.Types.ObjectId.isValid(playlistId)) {
-            throw new ApiError(400, "Invalid playlist ID");
-      }
-
       const playlist = await Playlist.findOneAndUpdate(
-            { _id: playlistId, owner: req.user._id },
+            {
+                  _id: playlistId,
+                  owner: req.user._id,
+            },
             {
                   $set: { name, description },
             },

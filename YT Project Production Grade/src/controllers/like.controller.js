@@ -2,6 +2,7 @@ import { Like } from "../models/likes.model.js";
 import { ApiError } from "../utils/ApiError.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
+import { validObjectIdCheck } from "../utils/ObjectIdValidator.js";
 
 const toggleLike = async ({ field, value, userId }) => {
       const existing = await Like.findOne({
@@ -25,9 +26,7 @@ const toggleLike = async ({ field, value, userId }) => {
 const toggleVideoLike = asyncHandler(async (req, res) => {
       const { videoId } = req.params;
 
-      if (!videoId) {
-            throw new ApiError(400, "VideoId is required");
-      }
+      validObjectIdCheck(videoId, 400, "Invalid Video ID");
 
       const liked = await toggleLike({
             field: "video",
@@ -51,9 +50,7 @@ const toggleVideoLike = asyncHandler(async (req, res) => {
 const toggleCommentLike = asyncHandler(async (req, res) => {
       const { commentId } = req.params;
 
-      if (!commentId) {
-            throw new ApiError(400, "CommentId is required");
-      }
+      validObjectIdCheck(commentId, 400, "Invalid Comment ID");
 
       const liked = await toggleLike({
             field: "comment",
@@ -77,9 +74,7 @@ const toggleCommentLike = asyncHandler(async (req, res) => {
 const toggleTweetLike = asyncHandler(async (req, res) => {
       const { tweetId } = req.params;
 
-      if (!tweetId) {
-            throw new ApiError(400, "TweetId is required");
-      }
+      validObjectIdCheck(tweetId, 400, "Invalid Tweet ID");
 
       const liked = await toggleLike({
             field: "tweet",
@@ -101,6 +96,8 @@ const toggleTweetLike = asyncHandler(async (req, res) => {
 });
 
 const getLikedVideos = asyncHandler(async (req, res) => {
+      
+
       const likedVideos = await Like.aggregate([
             {
                   $match: {
@@ -117,7 +114,10 @@ const getLikedVideos = asyncHandler(async (req, res) => {
                   },
             },
             {
-                  $unwind: "$likedVideo",
+                  $unwind: {
+                        path: "$likedVideo",
+                        preserveNullAndEmptyArrays: false,
+                  },
             },
             {
                   $match: {
@@ -137,6 +137,7 @@ const getLikedVideos = asyncHandler(async (req, res) => {
                         duration: "$likedVideo.duration",
                   },
             },
+            { $sort: { createdAt: -1 } },
       ]);
 
       return res

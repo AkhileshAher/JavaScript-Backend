@@ -8,7 +8,7 @@ const createTweet = asyncHandler(async (req, res) => {
       const { content } = req.body;
 
       if (!content || content.trim() === "") {
-            throw new ApiError(400, "Content is Mandatory For Tweet");
+            throw new ApiError(400, "Content is required");
       }
 
       const tweet = await Tweet.create({
@@ -28,11 +28,7 @@ const getUserTweets = asyncHandler(async (req, res) => {
 
       const allTweets = await Tweet.find({
             owner: userId,
-      });
-
-      if (!allTweets) {
-            throw new ApiError(400, "No Tweets Yet");
-      }
+      }).sort({ createdAt: -1 });
 
       return res
             .status(200)
@@ -65,7 +61,7 @@ const updateTweet = asyncHandler(async (req, res) => {
       );
 
       if (!tweet) {
-            throw new ApiError(400, "Tweet not Found or Unauthorized Access");
+            throw new ApiError(404, "Tweet not Found or Unauthorized Access");
       }
 
       return res
